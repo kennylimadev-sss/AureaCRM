@@ -1,0 +1,245 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               String   @default("ESTETICISTA")
+  phone              String?
+  avatarUrl          String?
+  googleRefreshToken String?
+  googleEmail        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  patients        Patient[]
+  procedures      Procedure[]
+  kanbanStages    KanbanStage[]
+  appointments    Appointment[]
+  anamnesisForms  AnamnesisForm[]
+  evolutions      ClinicalEvolution[]
+  bodyMapMarkings BodyMapMarking[]
+  messages        Message[]
+  whatsappSession WhatsAppSession?
+  webhooks        Webhook[]
+  integrations    IntegrationSetting[]
+  events          DomainEvent[]
+}
+
+model Patient {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  phone     String
+  email     String?
+  notes     String?
+  birthDate DateTime?
+  cpf       String?
+  address   String?
+  avatarUrl String?
+  stageId   String?
+  source    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      User               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stage       KanbanStage?       @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  appointments Appointment[]
+  anamnesis   AnamnesisForm[]
+  evolutions  ClinicalEvolution[]
+  messages    Message[]
+
+  @@index([tenantId])
+  @@index([stageId])
+}
+
+model Procedure {
+  id              String   @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?
+  durationMinutes Int      @default(60)
+  price           Float    @default(0)
+  color           String   @default("#C98D71")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant      User               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  markings    BodyMapMarking[]
+
+  @@index([tenantId])
+}
+
+model KanbanStage {
+  id         String   @id @default(cuid())
+  tenantId   String
+  name       String
+  orderIndex Int
+  color      String   @default("#C98D71")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant   User      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patients Patient[]
+
+  @@index([tenantId, orderIndex])
+}
+
+model Appointment {
+  id            String            @id @default(cuid())
+  tenantId      String
+  patientId     String
+  procedureId   String?
+  startTime     DateTime
+  endTime       DateTime
+  googleEventId String?
+  status        String            @default("SCHEDULED")
+  notes         String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  tenant    User       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient   Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  procedure Procedure? @relation(fields: [procedureId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, startTime])
+}
+
+model AnamnesisForm {
+  id            String   @id @default(cuid())
+  tenantId      String
+  patientId     String
+  healthHistory String?
+  allergies     String?
+  medications   String?
+  skinType      String?
+  lifestyle     String?
+  complaints    String?
+  attachmentUrl String?
+  signedAt      DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant  User    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, patientId])
+}
+
+model ClinicalEvolution {
+  id          String   @id @default(cuid())
+  tenantId    String
+  patientId   String
+  sessionDate DateTime
+  generalNotes String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   User             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient  Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  markings BodyMapMarking[]
+
+  @@index([tenantId, patientId])
+}
+
+model BodyMapMarking {
+  id            String   @id @default(cuid())
+  evolutionId   String
+  tenantId      String
+  procedureId   String?
+  bodyRegion    String
+  view          String
+  specificNotes String?
+  posX          Float    @default(0)
+  posY          Float    @default(0)
+  createdAt     DateTime @default(now())
+
+  evolution ClinicalEvolution @relation(fields: [evolutionId], references: [id], onDelete: Cascade)
+  tenant    User              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  procedure Procedure?        @relation(fields: [procedureId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, evolutionId])
+}
+
+model Message {
+  id        String            @id @default(cuid())
+  tenantId  String
+  patientId String
+  direction String
+  content   String
+  mediaUrl  String?
+  mediaType String?
+  timestamp DateTime          @default(now())
+  readAt    DateTime?
+
+  tenant  User    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, patientId, timestamp])
+}
+
+model WhatsAppSession {
+  id           String            @id @default(cuid())
+  tenantId     String            @unique
+  provider     String            @default("DEMO")
+  status       String            @default("DISCONNECTED")
+  qrCode       String?
+  phoneNumber  String?
+  sessionData  String?
+  lastQrAt     DateTime?
+  connectedAt  DateTime?
+  updatedAt    DateTime          @updatedAt
+
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  url       String
+  events    String
+  secret    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+model IntegrationSetting {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  value     String
+  updatedAt DateTime @updatedAt
+
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+}
+
+model DomainEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  type      String
+  payload   String
+  delivered Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant User @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, type])
+}

@@ -111,6 +111,14 @@
 *.pem
 *.key
 
+# App data
+**/prisma/dev.db
+**/prisma/dev.db-journal
+**/uploads/**
+!**/uploads/.gitkeep
+**/.next/
+**/*.tsbuildinfo
+
 # Temporary files
 *.tmp
 *.temp

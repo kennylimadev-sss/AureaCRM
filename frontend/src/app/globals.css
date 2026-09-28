@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 40 33% 96%;
+    --foreground: 24 10% 22%;
+    --card: 0 0% 100%;
+    --card-foreground: 24 10% 22%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 24 10% 22%;
+    --primary: 20 45% 61%;
+    --primary-foreground: 40 33% 97%;
+    --secondary: 108 12% 63%;
+    --secondary-foreground: 24 10% 18%;
+    --muted: 36 24% 90%;
+    --muted-foreground: 24 8% 42%;
+    --accent: 20 32% 76%;
+    --accent-foreground: 24 10% 22%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 32 18% 86%;
+    --input: 32 18% 86%;
+    --ring: 20 45% 61%;
+    --radius: 0.9rem;
+  }
+
+  .dark {
+    --background: 24 12% 10%;
+    --foreground: 40 20% 94%;
+    --card: 24 10% 15%;
+    --card-foreground: 40 20% 94%;
+    --popover: 24 10% 15%;
+    --popover-foreground: 40 20% 94%;
+    --primary: 20 45% 61%;
+    --primary-foreground: 24 12% 10%;
+    --secondary: 108 12% 55%;
+    --secondary-foreground: 24 12% 10%;
+    --muted: 24 8% 20%;
+    --muted-foreground: 30 10% 70%;
+    --accent: 20 25% 32%;
+    --accent-foreground: 40 20% 94%;
+    --destructive: 0 62% 40%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 24 8% 22%;
+    --input: 24 8% 22%;
+    --ring: 20 45% 61%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+.kanban-col {
+  min-width: 280px;
+}

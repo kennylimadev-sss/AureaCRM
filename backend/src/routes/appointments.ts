@@ -9,6 +9,12 @@ import type { AuthRequest } from "../types";
 const router = Router();
 router.use(authRequired);
 
+const appointmentInclude = {
+  patient: true,
+  procedure: true,
+  tags: { include: { tag: true } },
+} as const;
+
 const schema = z.object({
   patientId: z.string(),
   procedureId: z.string().optional().nullable(),
@@ -16,6 +22,7 @@ const schema = z.object({
   endTime: z.string(),
   status: z.enum(["SCHEDULED", "CONFIRMED", "COMPLETED", "CANCELLED", "NO_SHOW"]).optional(),
   notes: z.string().optional(),
+  tagIds: z.array(z.string()).optional(),
 });
 
 router.get("/", async (req: AuthRequest, res) => {
@@ -23,6 +30,8 @@ router.get("/", async (req: AuthRequest, res) => {
     const tenantId = req.user!.userId;
     const from = typeof req.query.from === "string" ? new Date(req.query.from) : undefined;
     const to = typeof req.query.to === "string" ? new Date(req.query.to) : undefined;
+    const tagId = typeof req.query.tagId === "string" ? req.query.tagId : undefined;
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const appointments = await prisma.appointment.findMany({
       where: {
         tenantId,
@@ -34,8 +43,18 @@ router.get("/", async (req: AuthRequest, res) => {
               },
             }
           : {}),
+        ...(tagId ? { tags: { some: { tagId } } } : {}),
+        ...(q
+          ? {
+              OR: [
+                { notes: { contains: q } },
+                { patient: { name: { contains: q } } },
+                { tags: { some: { tag: { name: { contains: q } } } } },
+              ],
+            }
+          : {}),
       },
-      include: { patient: true, procedure: true },
+      include: appointmentInclude,
       orderBy: { startTime: "asc" },
     });
     res.json(appointments);
@@ -69,15 +88,20 @@ router.post("/", async (req: AuthRequest, res) => {
         endTime: new Date(parsed.data.endTime),
         status: parsed.data.status ?? "SCHEDULED",
         notes: parsed.data.notes,
+        tags: parsed.data.tagIds
+          ? {
+              create: parsed.data.tagIds.map((tagId) => ({ tenantId, tagId })),
+            }
+          : undefined,
       },
-      include: { patient: true, procedure: true },
+      include: appointmentInclude,
     });
     const googleEventId = await syncAppointmentToGoogle(tenantId, appointment);
     const withGoogle = googleEventId
       ? await prisma.appointment.update({
           where: { id: appointment.id },
           data: { googleEventId },
-          include: { patient: true, procedure: true },
+          include: appointmentInclude,
         })
       : appointment;
     await emitDomainEvent(tenantId, "appointment.created", {
@@ -106,6 +130,9 @@ router.put("/:id", async (req: AuthRequest, res) => {
       res.status(404).json({ error: "Agendamento não encontrado" });
       return;
     }
+    if (parsed.data.tagIds) {
+      await prisma.appointmentTag.deleteMany({ where: { appointmentId: existing.id, tenantId } });
+    }
     const appointment = await prisma.appointment.update({
       where: { id: existing.id },
       data: {
@@ -116,15 +143,20 @@ router.put("/:id", async (req: AuthRequest, res) => {
         endTime: parsed.data.endTime ? new Date(parsed.data.endTime) : existing.endTime,
         status: parsed.data.status ?? existing.status,
         notes: parsed.data.notes ?? existing.notes,
+        tags: parsed.data.tagIds
+          ? {
+              create: parsed.data.tagIds.map((tagId) => ({ tenantId, tagId })),
+            }
+          : undefined,
       },
-      include: { patient: true, procedure: true },
+      include: appointmentInclude,
     });
     const googleEventId = await syncAppointmentToGoogle(tenantId, appointment);
     const withGoogle = googleEventId
       ? await prisma.appointment.update({
           where: { id: appointment.id },
           data: { googleEventId },
-          include: { patient: true, procedure: true },
+          include: appointmentInclude,
         })
       : appointment;
     await emitDomainEvent(tenantId, "appointment.updated", { appointmentId: withGoogle.id });

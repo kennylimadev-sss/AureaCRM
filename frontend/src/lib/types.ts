@@ -59,6 +59,22 @@ export type AppointmentStatus =
   | "CANCELLED"
   | "NO_SHOW";
 
+export interface Tag {
+  id: string;
+  tenantId: string;
+  name: string;
+  color: string;
+  createdAt?: string;
+  _count?: { appointments: number };
+}
+
+export interface AppointmentTagLink {
+  id: string;
+  tagId: string;
+  appointmentId: string;
+  tag: Tag;
+}
+
 export interface Appointment {
   id: string;
   tenantId: string;
@@ -71,6 +87,7 @@ export interface Appointment {
   notes: string | null;
   patient?: Patient;
   procedure?: Procedure | null;
+  tags?: AppointmentTagLink[];
 }
 
 export interface AnamnesisForm {

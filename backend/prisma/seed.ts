@@ -177,49 +177,72 @@ async function main(): Promise<void> {
   const daysFromNow = (d: number, h: number, m: number) =>
     new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, h, m);
 
-  await prisma.appointment.createMany({
+  await prisma.tag.deleteMany({ where: { tenantId } });
+  const [tagConfirmada, tagPrimeira, tagPosOp, tagRetorno] = await Promise.all([
+    prisma.tag.create({ data: { tenantId, name: "Confirmada", color: "#9AAB95" } }),
+    prisma.tag.create({ data: { tenantId, name: "Primeira visita", color: "#C98D71" } }),
+    prisma.tag.create({ data: { tenantId, name: "Pós-operatório", color: "#D8BCAE" } }),
+    prisma.tag.create({ data: { tenantId, name: "Retorno", color: "#7D8B74" } }),
+  ]);
+
+  const aptAna = await prisma.appointment.create({
+    data: {
+      tenantId,
+      patientId: ana.id,
+      procedureId: limpeza.id,
+      startTime: todayAt(10, 0),
+      endTime: todayAt(11, 15),
+      status: "CONFIRMED",
+      notes: "Trazer protetor solar.",
+    },
+  });
+  const aptHelena = await prisma.appointment.create({
+    data: {
+      tenantId,
+      patientId: helena.id,
+      procedureId: drenagem.id,
+      startTime: todayAt(14, 30),
+      endTime: todayAt(15, 30),
+      status: "SCHEDULED",
+    },
+  });
+  const aptClara = await prisma.appointment.create({
+    data: {
+      tenantId,
+      patientId: clara.id,
+      procedureId: botox.id,
+      startTime: daysFromNow(1, 9, 0),
+      endTime: daysFromNow(1, 10, 20),
+      status: "SCHEDULED",
+    },
+  });
+  await prisma.appointment.create({
+    data: {
+      tenantId,
+      patientId: julia.id,
+      procedureId: peeling.id,
+      startTime: daysFromNow(2, 16, 0),
+      endTime: daysFromNow(2, 16, 50),
+      status: "SCHEDULED",
+    },
+  });
+  await prisma.appointment.create({
+    data: {
+      tenantId,
+      patientId: fernanda.id,
+      procedureId: massagem.id,
+      startTime: daysFromNow(4, 11, 0),
+      endTime: daysFromNow(4, 11, 50),
+      status: "SCHEDULED",
+    },
+  });
+
+  await prisma.appointmentTag.createMany({
     data: [
-      {
-        tenantId,
-        patientId: ana.id,
-        procedureId: limpeza.id,
-        startTime: todayAt(10, 0),
-        endTime: todayAt(11, 15),
-        status: "CONFIRMED",
-        notes: "Trazer protetor solar.",
-      },
-      {
-        tenantId,
-        patientId: helena.id,
-        procedureId: drenagem.id,
-        startTime: todayAt(14, 30),
-        endTime: todayAt(15, 30),
-        status: "SCHEDULED",
-      },
-      {
-        tenantId,
-        patientId: clara.id,
-        procedureId: botox.id,
-        startTime: daysFromNow(1, 9, 0),
-        endTime: daysFromNow(1, 10, 20),
-        status: "SCHEDULED",
-      },
-      {
-        tenantId,
-        patientId: julia.id,
-        procedureId: peeling.id,
-        startTime: daysFromNow(2, 16, 0),
-        endTime: daysFromNow(2, 16, 50),
-        status: "SCHEDULED",
-      },
-      {
-        tenantId,
-        patientId: fernanda.id,
-        procedureId: massagem.id,
-        startTime: daysFromNow(4, 11, 0),
-        endTime: daysFromNow(4, 11, 50),
-        status: "SCHEDULED",
-      },
+      { tenantId, appointmentId: aptAna.id, tagId: tagConfirmada.id },
+      { tenantId, appointmentId: aptAna.id, tagId: tagRetorno.id },
+      { tenantId, appointmentId: aptHelena.id, tagId: tagPosOp.id },
+      { tenantId, appointmentId: aptClara.id, tagId: tagPrimeira.id },
     ],
   });
 

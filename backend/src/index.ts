@@ -18,6 +18,7 @@ import calendarRoutes from "./routes/calendar";
 import adminRoutes from "./routes/admin";
 import uploadRoutes from "./routes/uploads";
 import dashboardRoutes from "./routes/dashboard";
+import tagRoutes from "./routes/tags";
 import { bindSocketServer } from "./lib/events";
 import { bindWhatsAppIO } from "./lib/whatsapp";
 import type { JwtPayload } from "./types";
@@ -89,6 +90,7 @@ app.use("/api/calendar", calendarRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/uploads", uploadRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/tags", tagRoutes);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);

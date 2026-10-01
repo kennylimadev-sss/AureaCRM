@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   addDays,
   addMonths,
@@ -109,6 +109,22 @@ export default function AgendaPage() {
   });
   const [tagForm, setTagForm] = useState({ name: "", color: "#C98D71" });
   const [editingTag, setEditingTag] = useState<Tag | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const patientId = new URLSearchParams(window.location.search).get("patientId");
+    if (!patientId) return;
+    const start = new Date();
+    start.setHours(9, 0, 0, 0);
+    setForm({
+      patientId,
+      procedureId: "",
+      startTime: format(start, "yyyy-MM-dd'T'HH:mm"),
+      notes: "",
+      tagIds: [],
+    });
+    setOpen(true);
+  }, []);
 
   const filteredTags = useMemo(() => {
     const term = tagQuery.trim().toLowerCase();

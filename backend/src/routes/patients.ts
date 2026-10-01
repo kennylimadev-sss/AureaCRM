@@ -54,7 +54,12 @@ router.get("/:id", async (req: AuthRequest, res) => {
       where: { id: req.params.id, tenantId },
       include: {
         stage: true,
-        appointments: { orderBy: { startTime: "desc" }, take: 20, include: { procedure: true } },
+        tenant: { select: { name: true } },
+        appointments: {
+          orderBy: { startTime: "desc" },
+          take: 50,
+          include: { procedure: true, tags: { include: { tag: true } } },
+        },
         anamnesis: { orderBy: { createdAt: "desc" } },
         evolutions: {
           orderBy: { sessionDate: "desc" },

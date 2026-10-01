@@ -36,6 +36,7 @@ export interface Patient {
   createdAt: string;
   updatedAt: string;
   stage?: KanbanStage | null;
+  tenant?: { name: string } | null;
   appointments?: Appointment[];
   anamnesis?: AnamnesisForm[];
   evolutions?: ClinicalEvolution[];

@@ -13,18 +13,20 @@ export async function emitDomainEvent(
   payload: Record<string, unknown>
 ): Promise<void> {
   try {
+    const enriched = await enrichWebhookPayload(tenantId, type, payload);
+
     const event = await prisma.domainEvent.create({
       data: {
         tenantId,
         type,
-        payload: JSON.stringify(payload),
+        payload: JSON.stringify(enriched),
       },
     });
 
     ioRef?.to(`tenant:${tenantId}`).emit("domain_event", {
       id: event.id,
       type,
-      payload,
+      payload: enriched,
       createdAt: event.createdAt,
     });
 
@@ -37,10 +39,62 @@ export async function emitDomainEvent(
       if (!events.includes("*") && !events.includes(type)) {
         continue;
       }
-      void deliverWebhook(hook.url, hook.secret, type, payload);
+      void deliverWebhook(hook.url, hook.secret, type, enriched);
     }
   } catch (err) {
     console.error("emitDomainEvent failed", err);
+  }
+}
+
+async function enrichWebhookPayload(
+  tenantId: string,
+  type: string,
+  payload: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  try {
+    const appointmentId = typeof payload.appointmentId === "string" ? payload.appointmentId : null;
+    const patientId = typeof payload.patientId === "string" ? payload.patientId : null;
+
+    const responsavel = await prisma.user.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    });
+
+    let appointment = null;
+    if (appointmentId) {
+      appointment = await prisma.appointment.findFirst({
+        where: { id: appointmentId, tenantId },
+        include: { patient: { include: { stage: true } }, procedure: true },
+      });
+    }
+
+    let patient = appointment?.patient ?? null;
+    if (!patient && patientId) {
+      patient = await prisma.patient.findFirst({
+        where: { id: patientId, tenantId },
+        include: { stage: true },
+      });
+    }
+
+    const procedureName = appointment?.procedure?.name ?? patient?.interest ?? null;
+
+    return {
+      evento: type,
+      ...payload,
+      id_cliente: patient?.id ?? null,
+      nome_completo: patient?.name ?? null,
+      telefone_whatsapp: patient?.phone ?? null,
+      email: patient?.email ?? null,
+      procedimento: procedureName,
+      servico: procedureName,
+      esteticista_responsavel: responsavel?.name ?? null,
+      status_kanban: patient?.stage?.name ?? null,
+      data_agendamento: appointment?.startTime ? appointment.startTime.toISOString() : null,
+      origem_lead: patient?.source ?? null,
+    };
+  } catch (err) {
+    console.error("webhook payload enrichment failed", err);
+    return { evento: type, ...payload };
   }
 }
 
@@ -57,7 +111,7 @@ async function deliverWebhook(
         "Content-Type": "application/json",
         ...(secret ? { "X-Webhook-Secret": secret } : {}),
       },
-      body: JSON.stringify({ type, payload, sentAt: new Date().toISOString() }),
+      body: JSON.stringify({ type, event: type, payload, data: payload, sentAt: new Date().toISOString() }),
     });
   } catch (err) {
     console.error("webhook delivery failed", url, err);

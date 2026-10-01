@@ -32,6 +32,7 @@ export interface Patient {
   avatarUrl: string | null;
   stageId: string | null;
   source: string | null;
+  interest: string | null;
   createdAt: string;
   updatedAt: string;
   stage?: KanbanStage | null;

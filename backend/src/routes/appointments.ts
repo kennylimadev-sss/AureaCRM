@@ -180,7 +180,10 @@ router.delete("/:id", async (req: AuthRequest, res) => {
       return;
     }
     await prisma.appointment.delete({ where: { id: existing.id } });
-    await emitDomainEvent(tenantId, "appointment.deleted", { appointmentId: existing.id });
+    await emitDomainEvent(tenantId, "appointment.deleted", {
+      appointmentId: existing.id,
+      patientId: existing.patientId,
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

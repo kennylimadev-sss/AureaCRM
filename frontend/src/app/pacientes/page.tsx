@@ -19,7 +19,7 @@ export default function PacientesPage() {
   const { data, reload } = useApi<Patient[]>("/api/patients");
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
+  const [form, setForm] = useState({ name: "", phone: "", email: "", interest: "", notes: "" });
 
   const filtered = useMemo(() => {
     const term = q.toLowerCase();
@@ -36,7 +36,7 @@ export default function PacientesPage() {
     try {
       await api("/api/patients", { method: "POST", body: JSON.stringify(form) });
       setOpen(false);
-      setForm({ name: "", phone: "", email: "", notes: "" });
+      setForm({ name: "", phone: "", email: "", interest: "", notes: "" });
       await reload();
       toast({ title: "Paciente cadastrado" });
     } catch (err) {
@@ -73,6 +73,14 @@ export default function PacientesPage() {
                 <Label>E-mail</Label>
                 <Input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
               </div>
+              <div className="space-y-1">
+                <Label>Procedimento de interesse</Label>
+                <Input
+                  value={form.interest}
+                  onChange={(e) => setForm({ ...form, interest: e.target.value })}
+                  placeholder="Ex: Limpeza de pele"
+                />
+              </div>
               <Button type="submit" className="w-full">
                 Salvar
               </Button>
@@ -98,6 +106,7 @@ export default function PacientesPage() {
                   <p className="font-medium">{p.name}</p>
                   <p className="text-xs text-muted-foreground">{p.phone}</p>
                   {p.stage ? <p className="text-xs text-primary">{p.stage.name}</p> : null}
+                  {p.interest ? <p className="text-xs text-muted-foreground">{p.interest}</p> : null}
                 </div>
               </CardContent>
             </Card>

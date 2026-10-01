@@ -88,11 +88,12 @@ router.post("/", async (req: AuthRequest, res) => {
         endTime: new Date(parsed.data.endTime),
         status: parsed.data.status ?? "SCHEDULED",
         notes: parsed.data.notes,
-        tags: parsed.data.tagIds
-          ? {
-              create: parsed.data.tagIds.map((tagId) => ({ tenantId, tagId })),
-            }
-          : undefined,
+        tags:
+          parsed.data.tagIds && parsed.data.tagIds.length > 0
+            ? {
+                create: parsed.data.tagIds.map((tagId) => ({ tenantId, tagId })),
+              }
+            : undefined,
       },
       include: appointmentInclude,
     });
@@ -143,11 +144,12 @@ router.put("/:id", async (req: AuthRequest, res) => {
         endTime: parsed.data.endTime ? new Date(parsed.data.endTime) : existing.endTime,
         status: parsed.data.status ?? existing.status,
         notes: parsed.data.notes ?? existing.notes,
-        tags: parsed.data.tagIds
-          ? {
-              create: parsed.data.tagIds.map((tagId) => ({ tenantId, tagId })),
-            }
-          : undefined,
+        tags:
+          parsed.data.tagIds && parsed.data.tagIds.length > 0
+            ? {
+                create: parsed.data.tagIds.map((tagId) => ({ tenantId, tagId })),
+              }
+            : undefined,
       },
       include: appointmentInclude,
     });

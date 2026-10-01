@@ -1,16 +1,41 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { addDays, endOfMonth, format, isSameMonth, startOfMonth, startOfWeek } from "date-fns";
+import {
+  addDays,
+  addMonths,
+  endOfMonth,
+  endOfWeek,
+  format,
+  isSameDay,
+  isSameMonth,
+  isToday,
+  startOfMonth,
+  startOfWeek,
+} from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Search, Tag as TagIcon, Plus, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Plus,
+  Search,
+  Tag as TagIcon,
+  Trash2,
+} from "lucide-react";
 import { AppShell } from "@/components/layout/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { useApi } from "@/hooks/useApi";
 import { api, ApiError } from "@/lib/api";
@@ -37,26 +62,40 @@ const STATUS_OPTIONS: AppointmentStatus[] = [
 ];
 
 const TAG_PALETTE = ["#C98D71", "#9AAB95", "#D8BCAE", "#7D8B74", "#B08968", "#A98467", "#8A6A55", "#6B8F71"];
+const WEEKDAYS = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"];
+const VIEW_LABEL: Record<ViewMode, string> = { day: "Dia", week: "Semana", month: "Mês" };
+
+function rangeForView(cursor: Date, view: ViewMode): { from: Date; to: Date } {
+  if (view === "day") {
+    const from = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 0, 0, 0, 0);
+    const to = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 23, 59, 59, 999);
+    return { from, to };
+  }
+  if (view === "week") {
+    const from = startOfWeek(cursor, { weekStartsOn: 1 });
+    const to = endOfWeek(cursor, { weekStartsOn: 1 });
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  }
+  const from = startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 });
+  const to = endOfWeek(endOfMonth(cursor), { weekStartsOn: 1 });
+  to.setHours(23, 59, 59, 999);
+  return { from, to };
+}
 
 export default function AgendaPage() {
   const [cursor, setCursor] = useState(new Date());
-  const [view, setView] = useState<ViewMode>("week");
+  const [view, setView] = useState<ViewMode>("month");
   const [tagQuery, setTagQuery] = useState("");
   const [activeTagId, setActiveTagId] = useState<string | null>(null);
-  const from = useMemo(() => startOfWeek(startOfMonth(cursor), { weekStartsOn: 1 }), [cursor]);
-  const to = useMemo(() => addDays(endOfMonth(cursor), 7), [cursor]);
-  const { data, reload } = useApi<Appointment[]>(
+  const { from, to } = useMemo(() => rangeForView(cursor, view), [cursor, view]);
+  const { data, reload, loading } = useApi<Appointment[]>(
     `/api/appointments?from=${from.toISOString()}&to=${to.toISOString()}`,
     [from.toISOString(), to.toISOString()]
   );
   const { data: patients } = useApi<Patient[]>("/api/patients");
   const { data: procedures } = useApi<Procedure[]>("/api/procedures");
   const { data: tags, reload: reloadTags } = useApi<Tag[]>("/api/tags");
-  const { data: gStatus, reload: reloadG } = useApi<{
-    configured: boolean;
-    connected: boolean;
-    googleEmail: string | null;
-  }>("/api/calendar/status");
   const [open, setOpen] = useState(false);
   const [dayOpen, setDayOpen] = useState<Date | null>(null);
   const [selected, setSelected] = useState<Appointment | null>(null);
@@ -82,14 +121,33 @@ export default function AgendaPage() {
       const aptTags = a.tags?.map((l) => l.tag) ?? [];
       if (activeTagId && !aptTags.some((t) => t.id === activeTagId)) return false;
       if (!term) return true;
-      return aptTags.some((t) => t.name.toLowerCase().includes(term));
+      const patientName = a.patient?.name.toLowerCase() ?? "";
+      return aptTags.some((t) => t.name.toLowerCase().includes(term)) || patientName.includes(term);
     });
   }, [data, activeTagId, tagQuery]);
+
+  function openCreate(day?: Date) {
+    const base = day ?? new Date();
+    const start = new Date(base);
+    if (day) start.setHours(9, 0, 0, 0);
+    setForm({
+      patientId: "",
+      procedureId: "",
+      startTime: format(start, "yyyy-MM-dd'T'HH:mm"),
+      notes: "",
+      tagIds: [],
+    });
+    setOpen(true);
+  }
 
   async function createApt(e: FormEvent) {
     e.preventDefault();
     try {
       const start = new Date(form.startTime);
+      if (Number.isNaN(start.getTime())) {
+        toast({ title: "Data inválida", variant: "destructive" });
+        return;
+      }
       const proc = (procedures ?? []).find((p) => p.id === form.procedureId);
       const end = new Date(start.getTime() + (proc?.durationMinutes ?? 60) * 60000);
       await api("/api/appointments", {
@@ -99,18 +157,11 @@ export default function AgendaPage() {
           procedureId: form.procedureId || null,
           startTime: start.toISOString(),
           endTime: end.toISOString(),
-          notes: form.notes,
-          tagIds: form.tagIds,
+          notes: form.notes || undefined,
+          tagIds: form.tagIds.length > 0 ? form.tagIds : undefined,
         }),
       });
       setOpen(false);
-      setForm({
-        patientId: "",
-        procedureId: "",
-        startTime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
-        notes: "",
-        tagIds: [],
-      });
       await reload();
       toast({ title: "Horário agendado" });
     } catch (err) {
@@ -134,24 +185,11 @@ export default function AgendaPage() {
     }
   }
 
-  async function connectGoogle() {
-    try {
-      const res = await api<{ url: string }>("/api/calendar/oauth/start");
-      window.location.href = res.url;
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Google não configurado";
-      toast({ title: "OAuth indisponível", description: message, variant: "destructive" });
-    }
-  }
-
   async function saveTag(e: FormEvent) {
     e.preventDefault();
     try {
       if (editingTag) {
-        await api(`/api/tags/${editingTag.id}`, {
-          method: "PUT",
-          body: JSON.stringify(tagForm),
-        });
+        await api(`/api/tags/${editingTag.id}`, { method: "PUT", body: JSON.stringify(tagForm) });
       } else {
         await api("/api/tags", { method: "POST", body: JSON.stringify(tagForm) });
       }
@@ -177,7 +215,13 @@ export default function AgendaPage() {
     }
   }
 
-  const days = useMemo(() => {
+  function shift(dir: -1 | 1) {
+    if (view === "day") setCursor(addDays(cursor, dir));
+    else if (view === "week") setCursor(addDays(cursor, dir * 7));
+    else setCursor(addMonths(cursor, dir));
+  }
+
+  const cells = useMemo(() => {
     if (view === "day") return [cursor];
     if (view === "week") {
       const start = startOfWeek(cursor, { weekStartsOn: 1 });
@@ -188,221 +232,186 @@ export default function AgendaPage() {
   }, [cursor, view]);
 
   const byDay = (day: Date) =>
-    visibleAppointments.filter(
-      (a) => format(new Date(a.startTime), "yyyy-MM-dd") === format(day, "yyyy-MM-dd")
-    );
+    visibleAppointments.filter((a) => isSameDay(new Date(a.startTime), day));
+
+  const title =
+    view === "day"
+      ? format(cursor, "d 'de' MMMM yyyy", { locale: ptBR })
+      : view === "week"
+        ? `${format(startOfWeek(cursor, { weekStartsOn: 1 }), "d MMM", { locale: ptBR })} – ${format(endOfWeek(cursor, { weekStartsOn: 1 }), "d MMM yyyy", { locale: ptBR })}`
+        : format(cursor, "MMMM yyyy", { locale: ptBR });
 
   const dayEvents = dayOpen ? byDay(dayOpen) : [];
+  const maxChips = view === "month" ? 3 : 8;
 
   return (
     <AppShell>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Agenda</h1>
-          <p className="text-sm text-muted-foreground">
-            {format(cursor, "MMMM yyyy", { locale: ptBR })}
-          </p>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={() => setCursor(new Date())}>
+          Hoje
+        </Button>
+        <div className="flex items-center">
+          <Button variant="ghost" size="icon" onClick={() => shift(-1)} aria-label="Anterior">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button variant="ghost" size="icon" onClick={() => shift(1)} aria-label="Próximo">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Tabs value={view} onValueChange={(v) => setView(v as ViewMode)}>
-            <TabsList>
-              <TabsTrigger value="day">Dia</TabsTrigger>
-              <TabsTrigger value="week">Semana</TabsTrigger>
-              <TabsTrigger value="month">Mês</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Button variant="outline" onClick={() => setCursor(addDays(cursor, view === "month" ? -30 : view === "week" ? -7 : -1))}>
-            Anterior
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-1 rounded-lg px-2 py-1 text-xl font-normal capitalize hover:bg-muted">
+              {title}
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent>
+            {Array.from({ length: 12 }, (_, i) => {
+              const d = new Date(cursor.getFullYear(), i, 1);
+              return (
+                <DropdownMenuItem key={i} onClick={() => setCursor(d)}>
+                  {format(d, "MMMM yyyy", { locale: ptBR })}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="h-9 w-52 pl-9 md:w-64"
+              placeholder="Pesquisar tags ou paciente"
+              value={tagQuery}
+              onChange={(e) => setTagQuery(e.target.value)}
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setTagsOpen(true)}>
+            <TagIcon className="mr-2 h-4 w-4" />
+            Tags
           </Button>
-          <Button variant="outline" onClick={() => setCursor(new Date())}>
-            Hoje
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                {VIEW_LABEL[view]}
+                <ChevronDown className="ml-1 h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setView("day")}>Dia</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setView("week")}>Semana</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setView("month")}>Mês</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setView("week")}>7 dias</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button size="sm" onClick={() => openCreate()}>
+            <Plus className="mr-1 h-4 w-4" />
+            Agendar
           </Button>
-          <Button variant="outline" onClick={() => setCursor(addDays(cursor, view === "month" ? 30 : view === "week" ? 7 : 1))}>
-            Próximo
-          </Button>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button>Novo horário</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Agendar</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={createApt} className="space-y-3">
-                <div className="space-y-1">
-                  <Label>Paciente</Label>
-                  <select
-                    className="flex h-10 w-full rounded-xl border bg-card px-3 text-sm"
-                    value={form.patientId}
-                    onChange={(e) => setForm({ ...form, patientId: e.target.value })}
-                    required
-                  >
-                    <option value="">Selecionar</option>
-                    {(patients ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Procedimento</Label>
-                  <select
-                    className="flex h-10 w-full rounded-xl border bg-card px-3 text-sm"
-                    value={form.procedureId}
-                    onChange={(e) => setForm({ ...form, procedureId: e.target.value })}
-                  >
-                    <option value="">Avulso</option>
-                    {(procedures ?? []).map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} ({p.durationMinutes} min)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <Label>Início</Label>
-                  <Input
-                    type="datetime-local"
-                    value={form.startTime}
-                    onChange={(e) => setForm({ ...form, startTime: e.target.value })}
-                    required
-                  />
-                </div>
-                <TagPicker
-                  tags={tags ?? []}
-                  selectedIds={form.tagIds}
-                  onChange={(tagIds) => setForm({ ...form, tagIds })}
-                />
-                <Button type="submit" className="w-full">
-                  Salvar
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
-      <Card className="mb-4">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative min-w-[220px] flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Pesquisar tags (ex: confirmada, retorno)"
-                value={tagQuery}
-                onChange={(e) => setTagQuery(e.target.value)}
-              />
-            </div>
-            <Button variant="outline" onClick={() => setTagsOpen(true)}>
-              <TagIcon className="mr-2 h-4 w-4" />
-              Gerenciar tags
-            </Button>
-            {activeTagId ? (
-              <Button variant="ghost" size="sm" onClick={() => setActiveTagId(null)}>
-                Limpar filtro
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {filteredTags.length === 0 ? (
-              <p className="text-xs text-muted-foreground">Nenhuma tag encontrada.</p>
-            ) : (
-              filteredTags.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
-                  className={cn(
-                    "inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium transition",
-                    activeTagId === tag.id ? "ring-2 ring-offset-1 ring-offset-background" : "opacity-90 hover:opacity-100"
-                  )}
-                  style={{
-                    backgroundColor: `${tag.color}22`,
-                    borderColor: tag.color,
-                    color: tag.color,
-                  }}
-                >
-                  {tag.name}
-                </button>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div>
-            <p className="text-sm font-medium">Google Agenda</p>
-            <p className="text-xs text-muted-foreground">
-              {gStatus?.connected
-                ? `Sincronizado com ${gStatus.googleEmail}`
-                : gStatus?.configured
-                  ? "OAuth disponível — conecte sua conta"
-                  : "Defina GOOGLE_CLIENT_ID e GOOGLE_CLIENT_SECRET no backend para ativar o 2-way sync"}
-            </p>
-          </div>
-          {gStatus?.connected ? (
-            <Button
-              variant="outline"
-              onClick={async () => {
-                await api("/api/calendar/disconnect", { method: "POST" });
-                await reloadG();
-              }}
-            >
-              Desconectar
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={() => void connectGoogle()}>
-              Conectar Google
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className={view === "month" ? "grid grid-cols-7 gap-2" : "grid gap-3 md:grid-cols-2 xl:grid-cols-4"}>
-        {days.map((day) => {
-          const items = byDay(day);
-          const outside = view === "month" && !isSameMonth(day, cursor);
-          return (
+      {filteredTags.length > 0 ? (
+        <div className="mb-3 flex flex-wrap gap-2">
+          {filteredTags.map((tag) => (
             <button
-              key={day.toISOString()}
+              key={tag.id}
               type="button"
-              onClick={() => setDayOpen(day)}
+              onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
               className={cn(
-                "min-h-[120px] rounded-2xl border bg-card p-3 text-left shadow-sm transition hover:shadow-card hover:border-primary/40",
-                outside && "opacity-50"
+                "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
+                activeTagId === tag.id && "ring-2 ring-offset-1 ring-offset-background"
               )}
+              style={{ backgroundColor: `${tag.color}22`, borderColor: tag.color, color: tag.color }}
             >
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                {format(day, view === "month" ? "d" : "EEE d MMM", { locale: ptBR })}
-              </p>
-              <div className="space-y-1">
-                {items.slice(0, view === "month" ? 3 : 4).map((a) => (
-                  <div
-                    key={a.id}
-                    className="rounded-lg bg-primary/10 px-2 py-1 text-xs"
+              {tag.name}
+            </button>
+          ))}
+          {activeTagId ? (
+            <button type="button" className="text-xs text-muted-foreground underline" onClick={() => setActiveTagId(null)}>
+              Limpar filtro
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {loading ? <p className="mb-2 text-xs text-muted-foreground">Carregando agenda...</p> : null}
+
+      <div className="overflow-hidden rounded-xl border bg-card">
+        {view !== "day" ? (
+          <div className="grid grid-cols-7 border-b bg-muted/40">
+            {WEEKDAYS.map((d) => (
+              <div key={d} className="px-2 py-2 text-center text-[11px] font-medium tracking-wide text-muted-foreground">
+                {d}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div className={view === "month" ? "grid grid-cols-7" : view === "week" ? "grid grid-cols-7" : "grid grid-cols-1"}>
+          {cells.map((day, idx) => {
+            const items = byDay(day);
+            const outside = view === "month" && !isSameMonth(day, cursor);
+            const today = isToday(day);
+            return (
+              <div
+                key={day.toISOString()}
+                className={cn(
+                  "min-h-[110px] cursor-pointer border-b p-1.5 text-left transition hover:bg-muted/40",
+                  view !== "day" && idx % 7 !== 6 && "border-r",
+                  view === "week" && "min-h-[280px]",
+                  view === "day" && "min-h-[420px] p-3"
+                )}
+                onClick={() => setDayOpen(day)}
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span
+                    className={cn(
+                      "inline-flex h-7 w-7 items-center justify-center rounded-full text-sm",
+                      outside && "text-muted-foreground/50",
+                      today && "bg-primary text-primary-foreground font-medium"
+                    )}
+                  >
+                    {format(day, "d")}
+                  </span>
+                  <button
+                    type="button"
+                    className="rounded p-0.5 text-muted-foreground opacity-0 hover:bg-muted hover:opacity-100 group-hover:opacity-100"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelected(a);
+                      openCreate(day);
                     }}
+                    aria-label="Novo horário"
                   >
-                    <p className="font-medium">
-                      {formatTime(a.startTime)} · {a.patient?.name}
-                    </p>
-                    <p className="truncate text-muted-foreground">{a.procedure?.name}</p>
-                    <TagChips tags={a.tags?.map((l) => l.tag) ?? []} />
-                  </div>
-                ))}
-                {items.length > (view === "month" ? 3 : 4) ? (
-                  <p className="text-[11px] text-primary">+{items.length - (view === "month" ? 3 : 4)} no dia</p>
-                ) : null}
+                    <Plus className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="space-y-0.5">
+                  {items.slice(0, maxChips).map((a) => {
+                    const color = a.tags?.[0]?.tag.color ?? "#9AAB95";
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[11px] font-medium text-white"
+                        style={{ backgroundColor: color }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelected(a);
+                        }}
+                      >
+                        {formatTime(a.startTime)} {a.patient?.name}
+                      </button>
+                    );
+                  })}
+                  {items.length > maxChips ? (
+                    <p className="px-1 text-[11px] text-muted-foreground">+{items.length - maxChips} mais</p>
+                  ) : null}
+                </div>
               </div>
-            </button>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       <Dialog open={Boolean(dayOpen)} onOpenChange={(o) => !o && setDayOpen(null)}>
@@ -412,6 +421,11 @@ export default function AgendaPage() {
               {dayOpen ? format(dayOpen, "EEEE, d 'de' MMMM", { locale: ptBR }) : "Dia"}
             </DialogTitle>
           </DialogHeader>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => dayOpen && openCreate(dayOpen)}>
+              Novo horário neste dia
+            </Button>
+          </div>
           <div className="max-h-[60vh] space-y-2 overflow-auto">
             {dayEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum atendimento neste dia.</p>
@@ -479,6 +493,64 @@ export default function AgendaPage() {
               />
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Agendar</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={createApt} className="space-y-3">
+            <div className="space-y-1">
+              <Label>Paciente</Label>
+              <select
+                className="flex h-10 w-full rounded-xl border bg-card px-3 text-sm"
+                value={form.patientId}
+                onChange={(e) => setForm({ ...form, patientId: e.target.value })}
+                required
+              >
+                <option value="">Selecionar</option>
+                {(patients ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label>Procedimento</Label>
+              <select
+                className="flex h-10 w-full rounded-xl border bg-card px-3 text-sm"
+                value={form.procedureId}
+                onChange={(e) => setForm({ ...form, procedureId: e.target.value })}
+              >
+                <option value="">Avulso</option>
+                {(procedures ?? []).map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.durationMinutes} min)
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label>Início</Label>
+              <Input
+                type="datetime-local"
+                value={form.startTime}
+                onChange={(e) => setForm({ ...form, startTime: e.target.value })}
+                required
+              />
+            </div>
+            <TagPicker
+              tags={tags ?? []}
+              selectedIds={form.tagIds}
+              onChange={(tagIds) => setForm({ ...form, tagIds })}
+            />
+            <Button type="submit" className="w-full">
+              Salvar
+            </Button>
+          </form>
         </DialogContent>
       </Dialog>
 
